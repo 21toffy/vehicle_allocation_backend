@@ -1,7 +1,7 @@
 from rest_framework.generics import RetrieveUpdateDestroyAPIView, ListCreateAPIView
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -13,13 +13,44 @@ from django.db.models import Q
 
 import datetime
 
+
+
+
 def exception_handler(exception):
     template = "An exception of type {0} occurred. Arguments:{1!r}"
     message = template.format(type(exception).__name__, exception.args)
     return message
 
 
+class UserView(APIView):
+    # permission_classes = [IsAuthenticated]
+    def get(request, *args, **kwargs):
+        user = request.user
+        return Response({"data":{ "user":user}}, status = status.HTTP_200_OK )
+
+
+class HomePage(APIView):
+    def get(request, *args, **kwargs):
+        all_busses = Bus.objects.all().count()
+        busses_in_use = Bus.objects.filter(in_use = True).count()
+        bad_busses = Bus.objects.filter(condition = "bad").count()
+        good_busses = Bus.objects.filter(condition = "good").count()
+        fair_busses = Bus.objects.filter(condition = "fair").count()
+        busses_in_fix = Bus.objects.filter(under_maintenance = True).count()
+
+        return Response(
+            {"data":{ "all_busses":all_busses,
+            "busses_in_use":busses_in_use,
+            "bad_busses":bad_busses,
+            "good_busses":good_busses,
+            "fair_busses":fair_busses,
+            "busses_in_fix":busses_in_fix,
+            }}, status = status.HTTP_200_OK
+        )
+
+
 class ListBus(APIView):
+
     def get(request, *args, **kwargs):
         if kwargs['condition'] not in ['all', 'good', 'bad', 'fair', 'under_maintenace', 'in_use']:
             return Response({"data":[], 'message':"Wrong data passed"}, status=status.HTTP_400_BAD_REQUEST)
@@ -48,9 +79,14 @@ class ListBus(APIView):
 
 class ListLocation(APIView):
     def get(request, *args, **kwargs):
-        locations = Location.objects.filter(distance_description = kwargs['distance'])
-        serializer = LocationSerializer(locations, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        if kwargs['distance'] =='all':
+            locations = Location.objects.all()
+            serializer = LocationSerializer(locations, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        else:
+            locations = Location.objects.filter(distance_description = kwargs['distance'])
+            serializer = LocationSerializer(locations, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
        
 
 
@@ -106,27 +142,31 @@ class BusView(APIView):
 
 
 class LocationView(APIView):
-    # def get(self,request):
-    #     books = models.Books.objects.all()
-    #     res = BookAll(instance=books,many=True)
-    #     return JsonResponse(res.data,safe=False)
+    def get(self,request):
+        books = Location.Books.objects.all()
+        locations = LocationSerializer(instance=books,many=True)
+        return Response(locations, status=status.HTTP_200_OK)
  
     def post(self,request):
         try:
             data = request.data
             user = User.objects.filter(pk=1).first()
-            print(user)
-            location = Location.objects.create(
-                destination=data.get('destination'),
-                distance_in_km=data.get('distance_in_km'),
-                distance_description=data.get('distance_description'),
+            check = Location.objects.filter(destination__icontains=data.get('destination'))
+            if check is not None:
+                response = 'location already exist'
+                return Response({"data":[], 'message':response}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                location = Location.objects.create(
+                    destination=data.get('destination'),
+                    distance_in_km=int(data.get('distance_in_km')),
+                    distance_description=data.get('distance_description'),
 
-                # creator=self.request.user,
-                creator = user
-                )
-            created_location = Location.objects.get(id=location.id)
-            print(created_location)
-            return Response(request.data, status=status.HTTP_201_CREATED)
+                    # creator=self.request.user,
+                    creator = user
+                    )
+                created_location = Location.objects.get(id=location.id)
+                print(created_location)
+                return Response(request.data, status=status.HTTP_201_CREATED)
         except Exception as e:
             response = exception_handler(e)
             return Response({"data":[], 'message':response}, status=status.HTTP_400_BAD_REQUEST)
@@ -160,14 +200,17 @@ class ListSuitableBussesView(APIView):
         data = request.data
         location=data.get('location')
         passangers=data.get('passangers')
+        print(data)
+        print(location, passangers)
         location_status = Location.objects.filter(destination__icontains = location).first()
+        print(location_status.distance_description)
 
-        try:
+        if location_status is not None:
             if location_status.distance_description=="far":
                 bus = Bus.objects.filter(fuel_consumption = 'low', 
                                         condition = "good", in_use=False, 
                                         under_maintenance = False, 
-                                        seat_capacity__gte=passangers)
+                                        seat_capacity__gte=passangers).order_by('?')
                 serializer = BusSerializer(bus, many=True)
                 return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -177,17 +220,18 @@ class ListSuitableBussesView(APIView):
                                         Q(condition = "good") | Q(condition = "fair"),
                                         in_use=False,
                                         under_maintenance = False,
-                                        seat_capacity__gte=passangers)
+                                        seat_capacity__gte=passangers).order_by('?')
                 serializer = BusSerializer(bus, many=True)
                 return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-            elif location_status.distance_description == "close":
+            elif location_status.distance_description == "near":
                 bus = Bus.objects.filter(fuel_consumption = 'high', 
                                         condition = "fair", 
                                         in_use=False, 
                                         under_maintenance = False, 
-                                        seat_capacity__gte=passangers)
+                                        seat_capacity__gte=passangers).order_by('?')
+                print(bus)
                 serializer = BusSerializer(bus, many=True)
                 return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -198,25 +242,26 @@ class ListSuitableBussesView(APIView):
 
 
                 return Response(serializer.data, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"data":[], 'message':f"bus probablt does not exist in DB/ {e}"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({"data":[], 'message':f"bus probablt does not exist in DB"}, status=status.HTTP_400_BAD_REQUEST)
 
        
 
 class AllocateBusView(APIView):
-
     def post(self,request):
         try:
             data = request.data
             user = User.objects.filter(pk=1).first()
-            print(user)
+            print("hi")
             # date_of_journey = datetime.datetime.strptime(date, "%Y-%m-%d")
             location = Location.objects.filter(destination__icontains = data.get('location')).first()
             bus = Bus.objects.get(id = data.get('bus'))
 
             print(location)
+
+
             allocation = Allocation.objects.create(
-                number_of_passengers=data.get('number_of_passengers'),
+                number_of_passengers=int(data.get('number_of_passengers')),
                 location=location,
                 bus=bus,
                 driver=data.get('driver'),

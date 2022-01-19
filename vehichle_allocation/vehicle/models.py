@@ -65,7 +65,7 @@ class Location(models.Model):
         ordering = ['-id']
 
     def __str__(self):
-        return self.destination
+        return self.distance_description + "  "+ self.destination
 
 
 class Allocation(models.Model):
@@ -83,4 +83,4 @@ class Allocation(models.Model):
     class Meta:
         ordering = ['-id']
     def __str__(self):
-        return self.number_of_passengers + self.location + self.bus + self.driver + self.date_of_journey + self.vehicle_condition
+        return f'gong to:{self.location.destination}--with:{str( self.number_of_passengers)} passengers'

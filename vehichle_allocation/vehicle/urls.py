@@ -5,6 +5,13 @@ urlpatterns = [
     path("suitable/", views.ListSuitableBussesView.as_view(),name="suitable_buses_list"),
     path("allocate-suitable/", views.AllocateBusView.as_view(),name="allocate_suitable_buses"),
 
+    path("home/", views.HomePage.as_view(),name="home"),
+
+
+    path("me/", views.UserView.as_view(),name="home"),
+
+
+
 
     
     path("create/bus/", views.BusView.as_view(),name="bus_create"),
